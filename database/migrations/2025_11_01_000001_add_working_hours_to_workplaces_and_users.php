@@ -19,7 +19,7 @@ return new class extends Migration
 
         // Добавляем поля графика работы и отпусков для сотрудников
         Schema::table('users', function (Blueprint $table) {
-            $table->json('working_hours')->nullable()->after('is_admin')
+            $table->json('working_hours')->nullable()->after('is_active')
                 ->comment('Персональный график работы сотрудника (переопределяет график места работы)');
             $table->json('custom_schedules')->nullable()->after('working_hours')
                 ->comment('Особые графики на конкретные даты: [{date: "2025-11-01", start: "10:00", end: "16:00", is_working: true}]');
