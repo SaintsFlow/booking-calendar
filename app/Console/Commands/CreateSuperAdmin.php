@@ -36,7 +36,7 @@ class CreateSuperAdmin extends Command
         $this->newLine();
 
         // Проверяем, есть ли уже супер-админ
-        $existingSuperAdmin = User::where('is_super_admin', true)->first();
+        $existingSuperAdmin = User::where('role', 'super_admin')->first();
         if ($existingSuperAdmin) {
             $this->warn('⚠️  Супер-администратор уже существует:');
             $this->line("   Email: {$existingSuperAdmin->email}");
@@ -104,8 +104,8 @@ class CreateSuperAdmin extends Command
                 'name' => $name,
                 'email' => $email,
                 'password' => Hash::make($password),
-                'is_super_admin' => true,
-                'is_admin' => true,
+                'role' => 'super_admin',
+                'is_active' => true,
             ]);
 
             $this->newLine();
