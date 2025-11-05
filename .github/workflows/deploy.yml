@@ -1,0 +1,216 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Server
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.2
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_mysql, bcmath, soap, intl, gd, exif, iconv
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Install Composer dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Create deployment archive
+        run: |
+          mkdir deploy
+          tar -czf deploy/app.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='tests' \
+            --exclude='storage/logs/*' \
+            --exclude='storage/framework/cache/*' \
+            --exclude='storage/framework/sessions/*' \
+            --exclude='storage/framework/views/*' \
+            --exclude='.env' \
+            --exclude='.env.example' \
+            .
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: "deploy/app.tar.gz"
+          target: "/tmp"
+
+      - name: Execute deployment commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            set -e
+
+            # Configuration
+            APP_DIR="${{ secrets.DEPLOY_PATH }}"
+            BACKUP_DIR="${APP_DIR}/backups"
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+            echo "🚀 Starting deployment..."
+
+            # Create backup
+            echo "📦 Creating backup..."
+            mkdir -p $BACKUP_DIR
+            cd $APP_DIR
+            tar -czf $BACKUP_DIR/backup_$TIMESTAMP.tar.gz \
+              --exclude='storage/logs/*' \
+              --exclude='storage/framework/cache/*' \
+              --exclude='node_modules' \
+              --exclude='vendor' \
+              . || echo "⚠️ Backup warning (non-critical)"
+
+            # Keep only last 5 backups
+            cd $BACKUP_DIR
+            ls -t | tail -n +6 | xargs -r rm -- || true
+
+            # Extract new version
+            echo "📂 Extracting new version..."
+            cd $APP_DIR
+            tar -xzf /tmp/deploy/app.tar.gz
+            rm /tmp/deploy/app.tar.gz
+
+            # Set permissions
+            echo "🔒 Setting permissions..."
+            chmod -R 755 $APP_DIR
+            chmod -R 775 $APP_DIR/storage
+            chmod -R 775 $APP_DIR/bootstrap/cache
+
+            # Laravel optimizations
+            echo "⚙️ Running Laravel optimizations..."
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            php artisan event:cache
+
+            # Run migrations
+            echo "🗄️ Running database migrations..."
+            php artisan migrate --force
+
+            # Clear caches
+            echo "🧹 Clearing caches..."
+            php artisan optimize:clear || true
+
+            # Restart queue workers
+            echo "🔄 Restarting queue workers..."
+            php artisan queue:restart
+
+            # Restart Reverb WebSocket server
+            echo "🔌 Restarting Reverb..."
+            php artisan reverb:restart || echo "⚠️ Reverb restart skipped"
+
+            # Restart PHP-FPM (if using)
+            echo "🔄 Restarting PHP-FPM..."
+            sudo systemctl restart php8.2-fpm || echo "⚠️ PHP-FPM restart skipped"
+
+            # Reload Supervisor (for queue workers)
+            echo "👷 Reloading Supervisor..."
+            sudo supervisorctl reread || echo "⚠️ Supervisor reread skipped"
+            sudo supervisorctl update || echo "⚠️ Supervisor update skipped"
+            sudo supervisorctl restart all || echo "⚠️ Supervisor restart skipped"
+
+            echo "✅ Deployment completed successfully!"
+
+      - name: Health Check
+        run: |
+          echo "🏥 Running health check..."
+          sleep 5
+          curl -f ${{ secrets.APP_URL }}/api/health || echo "⚠️ Health check failed"
+        continue-on-error: true
+
+      - name: Notify on Success
+        if: success()
+        run: |
+          echo "✅ Deployment to production completed successfully!"
+          echo "🌐 Application URL: ${{ secrets.APP_URL }}"
+          echo "📅 Deployed at: $(date)"
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "🔍 Check the logs above for details"
+          echo "💾 Rollback may be needed"
+
+      - name: Rollback on Failure
+        if: failure()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            set -e
+
+            APP_DIR="${{ secrets.DEPLOY_PATH }}"
+            BACKUP_DIR="${APP_DIR}/backups"
+
+            echo "⏪ Rolling back to previous version..."
+
+            cd $BACKUP_DIR
+            LATEST_BACKUP=$(ls -t | head -n 1)
+
+            if [ -z "$LATEST_BACKUP" ]; then
+              echo "❌ No backup found for rollback!"
+              exit 1
+            fi
+
+            echo "📦 Restoring from: $LATEST_BACKUP"
+            cd $APP_DIR
+            tar -xzf $BACKUP_DIR/$LATEST_BACKUP
+
+            echo "⚙️ Clearing caches..."
+            php artisan optimize:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            echo "🔄 Restarting services..."
+            php artisan queue:restart
+            sudo systemctl restart php8.2-fpm || true
+
+            echo "✅ Rollback completed!"
