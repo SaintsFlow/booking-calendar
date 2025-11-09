@@ -44,6 +44,13 @@ class TenantController extends Controller
             'admin_name' => 'required|string|max:255',
             'admin_email' => 'required|email|unique:users,email',
             'admin_password' => 'required|string|min:8',
+
+            // Данные первого сотрудника (опционально)
+            'create_first_employee' => 'nullable|boolean',
+            'employee_name' => 'required_if:create_first_employee,true|string|max:255',
+            'employee_email' => 'required_if:create_first_employee,true|email|unique:users,email',
+            'employee_phone' => 'nullable|string|max:20',
+            'employee_password' => 'required_if:create_first_employee,true|string|min:8',
         ]);
 
         // По умолчанию trial на 14 дней
@@ -70,10 +77,24 @@ class TenantController extends Controller
             'is_active' => true,
         ]);
 
+        // Создаём первого сотрудника, если указано
+        $employee = null;
+        if ($validated['create_first_employee'] ?? false) {
+            $employee = $tenant->users()->create([
+                'name' => $validated['employee_name'],
+                'email' => $validated['employee_email'],
+                'phone' => $validated['employee_phone'] ?? null,
+                'password' => Hash::make($validated['employee_password']),
+                'role' => 'employee',
+                'is_active' => true,
+            ]);
+        }
+
         return response()->json([
             'message' => 'Кабинет успешно создан',
             'tenant' => $tenant,
             'admin' => $admin,
+            'employee' => $employee,
         ], 201);
     }
 

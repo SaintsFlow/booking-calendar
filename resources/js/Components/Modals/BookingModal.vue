@@ -1,6 +1,23 @@
 <template>
     <Modal :show="show" @close="close" :title="isEdit ? 'Редактировать бронирование' : 'Новое бронирование'" max-width="4xl">
         <form @submit.prevent="submit">
+            <!-- Уведомление об отмене -->
+            <div v-if="isCancelled" class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div class="flex items-center">
+                    <svg class="w-5 h-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                    </svg>
+                    <div>
+                        <p class="text-sm font-medium text-red-800">
+                            Это бронирование отменено
+                        </p>
+                        <p class="text-sm text-red-600">
+                            {{ props.booking?.status?.name || 'Отменено' }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
             <div class="grid grid-cols-2 gap-6">
                 <!-- Левая колонка -->
                 <div class="space-y-4">
@@ -257,13 +274,38 @@
                 </div>
             </div>
 
-            <div class="mt-6 flex justify-end space-x-3">
-                <button type="button" @click="close" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                    Отмена
-                </button>
-                <button type="submit" :disabled="processing" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                    {{ processing ? 'Сохранение...' : (isEdit ? 'Сохранить' : 'Создать') }}
-                </button>
+            <div class="mt-6 flex justify-between items-center">
+                <!-- Кнопки отмены/восстановления бронирования (слева) -->
+                <div class="flex space-x-2">
+                    <button
+                        v-if="canCancel"
+                        type="button"
+                        @click="cancelBooking"
+                        :disabled="processing"
+                        class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                        Отменить бронь
+                    </button>
+                    <button
+                        v-if="canRestore"
+                        type="button"
+                        @click="restoreBooking"
+                        :disabled="processing"
+                        class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    >
+                        Восстановить бронь
+                    </button>
+                </div>
+                
+                <!-- Основные кнопки (справа) -->
+                <div class="flex space-x-3">
+                    <button type="button" @click="close" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                        Отмена
+                    </button>
+                    <button type="submit" :disabled="processing || isCancelled" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                        {{ processing ? 'Сохранение...' : (isEdit ? 'Сохранить' : 'Создать') }}
+                    </button>
+                </div>
             </div>
         </form>
     </Modal>
@@ -277,6 +319,9 @@ import Modal from '../Modal.vue'
 import axios from 'axios'
 import { useCalendarStore } from '@/stores/calendar'
 import { useToast } from '@/composables/useToast'
+import { usePage } from '@inertiajs/vue3'
+
+const page = usePage()
 
 const props = defineProps({
     show: Boolean,
@@ -322,7 +367,7 @@ const getError = (field) => {
 
 const clients = computed(() => calendarStore.clients || [])
 const workplaces = computed(() => calendarStore.workplaces || [])
-const employees = computed(() => (calendarStore.employees || []).filter(u => u.role === 'employee' || u.role === 'admin' || u.role === 'manager'))
+const employees = computed(() => (calendarStore.employees || []).filter(u => u.role === 'employee' || u.role === 'manager'))
 const services = computed(() => calendarStore.services || [])
 const statuses = computed(() => calendarStore.statuses || [])
 
@@ -360,6 +405,42 @@ const endTime = computed(() => {
     const endMinutes = totalMinutes % 60
     
     return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`
+})
+
+// Получение текущего пользователя
+const currentUser = computed(() => page.props.auth?.user)
+
+// Проверка, имеет ли пользователь права менеджера
+const hasManagerAccess = computed(() => {
+    const role = currentUser.value?.role
+    return role === 'super_admin' || role === 'admin' || role === 'manager'
+})
+
+// Проверка, отменено ли бронирование
+const isCancelled = computed(() => {
+    if (!props.booking?.status) return false
+    const code = props.booking.status.code
+    return code === 'cancelled_by_client' || code === 'cancelled_by_admin'
+})
+
+// Можно ли восстановить бронирование
+const canRestore = computed(() => {
+    if (!isEdit.value || !isCancelled.value) return false
+    if (!hasManagerAccess.value) return false
+    
+    // Проверяем, что время брони в будущем
+    if (props.booking?.start_time) {
+        const startTime = new Date(props.booking.start_time)
+        return startTime > new Date()
+    }
+    
+    return false
+})
+
+// Можно ли отменить бронирование
+const canCancel = computed(() => {
+    if (!isEdit.value || isCancelled.value) return false
+    return hasManagerAccess.value
 })
 
 // Форматирование длительности (минуты → "X ч Y мин")
@@ -617,5 +698,60 @@ const submit = async () => {
 
 const close = () => {
     emit('close')
+}
+
+// Отмена бронирования
+const cancelBooking = async () => {
+    if (!canCancel.value || !props.booking?.id) return
+    
+    const reason = prompt('Укажите причину отмены бронирования (необязательно):')
+    // Если пользователь нажал "Отмена" в prompt, reason будет null
+    if (reason === null) return
+    
+    processing.value = true
+    
+    try {
+        await axios.post(`/api/bookings/${props.booking.id}/cancel`, {
+            cancel_reason: reason || null,
+            cancelled_by_admin: hasManagerAccess.value
+        })
+        
+        toast.success('Бронирование отменено', 'Бронирование успешно отменено')
+        emit('saved')
+        close()
+    } catch (error) {
+        toast.error(
+            'Ошибка при отмене',
+            error.response?.data?.message || 'Не удалось отменить бронирование'
+        )
+    } finally {
+        processing.value = false
+    }
+}
+
+// Восстановление бронирования
+const restoreBooking = async () => {
+    if (!canRestore.value || !props.booking?.id) return
+    
+    if (!confirm('Вы уверены, что хотите восстановить это бронирование?')) {
+        return
+    }
+    
+    processing.value = true
+    
+    try {
+        await axios.post(`/api/bookings/${props.booking.id}/restore`)
+        
+        toast.success('Бронирование восстановлено', 'Бронирование успешно восстановлено')
+        emit('saved')
+        close()
+    } catch (error) {
+        toast.error(
+            'Ошибка при восстановлении',
+            error.response?.data?.message || 'Не удалось восстановить бронирование'
+        )
+    } finally {
+        processing.value = false
+    }
 }
 </script>

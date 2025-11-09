@@ -207,4 +207,40 @@ class Booking extends Model
         return $query->where('start_time', '>=', $startDate)
             ->where('start_time', '<=', $endDate);
     }
+
+    /**
+     * Scope: исключить отменённые бронирования
+     */
+    public function scopeExcludeCancelled($query)
+    {
+        return $query->whereHas('status', function ($q) {
+            $q->whereNotIn('code', ['cancelled_by_client', 'cancelled_by_admin']);
+        });
+    }
+
+    /**
+     * Scope: только отменённые бронирования
+     */
+    public function scopeOnlyCancelled($query)
+    {
+        return $query->whereHas('status', function ($q) {
+            $q->whereIn('code', ['cancelled_by_client', 'cancelled_by_admin']);
+        });
+    }
+
+    /**
+     * Проверить, отменено ли бронирование
+     */
+    public function isCancelled(): bool
+    {
+        return in_array($this->status->code ?? '', ['cancelled_by_client', 'cancelled_by_admin']);
+    }
+
+    /**
+     * Можно ли восстановить бронирование
+     */
+    public function canBeRestored(): bool
+    {
+        return $this->isCancelled() && $this->start_time->isFuture();
+    }
 }

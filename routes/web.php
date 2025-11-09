@@ -24,11 +24,20 @@ Route::middleware('guest')->group(function () {
 });
 
 // Защищённые роуты
-Route::middleware(['auth', 'tenant.context', 'tenant.status'])->group(function () {
+Route::middleware(['auth'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout'])->name('logout');
 
-    // Главная страница - календарь (доступен всем)
-    Route::get('/', fn() => Inertia::render('Calendar/Index'))->name('home');
+    // Главная страница - редирект в зависимости от роли
+    Route::get('/', function (\Illuminate\Http\Request $request) {
+        if ($request->user()->role === 'super_admin') {
+            return redirect()->route('admin.tenants');
+        }
+        return Inertia::render('Calendar/Index');
+    })->name('home');
+});
+
+// Роуты требующие наличие tenant
+Route::middleware(['auth', 'tenant.context', 'tenant.status'])->group(function () {
     Route::get('/calendar', fn() => Inertia::render('Calendar/Index'))->name('calendar');
 
     // Справочники (недоступны для сотрудников)
@@ -48,12 +57,20 @@ Route::middleware(['auth', 'tenant.context', 'tenant.status'])->group(function (
         Route::put('/bitrix24', [\App\Http\Controllers\Settings\Bitrix24SettingsController::class, 'update'])->name('bitrix24.update');
         Route::post('/bitrix24/test', [\App\Http\Controllers\Settings\Bitrix24SettingsController::class, 'test'])->name('bitrix24.test');
         Route::post('/bitrix24/sync-products', [\App\Http\Controllers\Settings\Bitrix24SettingsController::class, 'syncProducts'])->name('bitrix24.sync-products');
+        Route::post('/bitrix24/sync-users', [\App\Http\Controllers\Settings\Bitrix24SettingsController::class, 'syncUsers'])->name('bitrix24.sync-users');
+        Route::post('/bitrix24/sync-services-to', [\App\Http\Controllers\Settings\Bitrix24SettingsController::class, 'syncServicesToBitrix24'])->name('bitrix24.sync-services-to');
     });
 });
 
 // Супер-админ роуты
 Route::middleware(['auth', 'super.admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/tenants', fn() => Inertia::render('Admin/Tenants'))->name('tenants');
+
+    // Управление подписками
+    Route::resource('subscriptions', \App\Http\Controllers\SubscriptionController::class);
+    Route::post('/subscriptions/{subscription}/pause', [\App\Http\Controllers\SubscriptionController::class, 'pause'])->name('subscriptions.pause');
+    Route::post('/subscriptions/{subscription}/resume', [\App\Http\Controllers\SubscriptionController::class, 'resume'])->name('subscriptions.resume');
+    Route::post('/subscriptions/{subscription}/cancel', [\App\Http\Controllers\SubscriptionController::class, 'cancel'])->name('subscriptions.cancel');
 });
 
 // ==============================================
@@ -104,6 +121,8 @@ Route::prefix('api')->middleware(['auth'])->group(function () {
         Route::post('/bookings/{booking}/move', [BookingController::class, 'move']);
         Route::post('/bookings/{booking}/status', [BookingController::class, 'updateStatus']);
         Route::post('/bookings/{booking}/attendance', [BookingController::class, 'updateAttendance']);
+        Route::post('/bookings/{booking}/cancel', [BookingController::class, 'cancel']);
+        Route::post('/bookings/{booking}/restore', [BookingController::class, 'restore']);
 
         // Клиенты
         Route::get('/clients', [ClientController::class, 'index']);

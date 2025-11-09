@@ -35,6 +35,10 @@ const testing = ref(false);
 const testResult = ref(null);
 const syncing = ref(false);
 const syncResult = ref(null);
+const syncingUsers = ref(false);
+const syncUsersResult = ref(null);
+const syncingServicesTo = ref(false);
+const syncServicesToResult = ref(null);
 
 const hasWebhook = computed(() => props.settings.webhook_url !== null);
 const hasOAuthClientId = computed(() => props.settings.oauth_client_id !== null);
@@ -101,6 +105,56 @@ const syncProducts = async () => {
         };
     } finally {
         syncing.value = false;
+    }
+};
+
+const syncUsers = async () => {
+    syncingUsers.value = true;
+    syncUsersResult.value = null;
+
+    try {
+        const response = await fetch('/settings/bitrix24/sync-users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            },
+        });
+
+        const data = await response.json();
+        syncUsersResult.value = data;
+    } catch (error) {
+        syncUsersResult.value = {
+            success: false,
+            message: 'Ошибка синхронизации: ' + error.message,
+        };
+    } finally {
+        syncingUsers.value = false;
+    }
+};
+
+const syncServicesToBitrix24 = async () => {
+    syncingServicesTo.value = true;
+    syncServicesToResult.value = null;
+
+    try {
+        const response = await fetch('/settings/bitrix24/sync-services-to', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            },
+        });
+
+        const data = await response.json();
+        syncServicesToResult.value = data;
+    } catch (error) {
+        syncServicesToResult.value = {
+            success: false,
+            message: 'Ошибка синхронизации: ' + error.message,
+        };
+    } finally {
+        syncingServicesTo.value = false;
     }
 };
 </script>
@@ -285,7 +339,28 @@ const syncProducts = async () => {
                             class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <span v-if="syncing">Синхронизация...</span>
-                            <span v-else>Синхронизировать товары</span>
+                            <span v-else>← Импорт товаров</span>
+                        </button>
+
+                        <button
+                            v-if="form.catalog_iblock_id"
+                            type="button"
+                            @click="syncServicesToBitrix24"
+                            :disabled="syncingServicesTo"
+                            class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <span v-if="syncingServicesTo">Синхронизация...</span>
+                            <span v-else>Экспорт услуг →</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            @click="syncUsers"
+                            :disabled="syncingUsers"
+                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <span v-if="syncingUsers">Синхронизация...</span>
+                            <span v-else>← Импорт пользователей</span>
                         </button>
                     </div>
 
@@ -313,7 +388,33 @@ const syncProducts = async () => {
                                 'text-green-800': syncResult.success,
                                 'text-red-800': !syncResult.success
                             }">
-                                {{ testResult.message }}
+                                {{ syncResult.message }}
+                            </p>
+                        </div>
+
+                        <!-- Результат синхронизации пользователей -->
+                        <div v-if="syncUsersResult" class="p-3 rounded-md" :class="{
+                            'bg-green-50 border border-green-200': syncUsersResult.success,
+                            'bg-red-50 border border-red-200': !syncUsersResult.success
+                        }">
+                            <p class="text-sm" :class="{
+                                'text-green-800': syncUsersResult.success,
+                                'text-red-800': !syncUsersResult.success
+                            }">
+                                {{ syncUsersResult.message }}
+                            </p>
+                        </div>
+
+                        <!-- Результат синхронизации услуг в Bitrix24 -->
+                        <div v-if="syncServicesToResult" class="p-3 rounded-md" :class="{
+                            'bg-green-50 border border-green-200': syncServicesToResult.success,
+                            'bg-red-50 border border-red-200': !syncServicesToResult.success
+                        }">
+                            <p class="text-sm" :class="{
+                                'text-green-800': syncServicesToResult.success,
+                                'text-red-800': !syncServicesToResult.success
+                            }">
+                                {{ syncServicesToResult.message }}
                             </p>
                         </div>
                     </div>

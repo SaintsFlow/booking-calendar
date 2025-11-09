@@ -215,6 +215,23 @@ class Bitrix24ApiClient
     }
 
     /**
+     * Получить список пользователей из Bitrix24
+     * 
+     * @param array $filter Фильтр пользователей (ACTIVE, USER_TYPE и др.)
+     * @param int $start Начальная позиция для пагинации
+     * @return array Массив пользователей
+     */
+    public function listUsers(array $filter = [], int $start = 0): array
+    {
+        $response = $this->makeRequest('user.get', [
+            'filter' => $filter,
+            'start' => $start,
+        ]);
+
+        return $response['result'] ?? [];
+    }
+
+    /**
      * Выполнить запрос к Bitrix24 REST API
      */
     public function makeRequest(string $method, array $params = []): array

@@ -27,6 +27,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     const selectedWorkplaceId = ref(null);
     const selectedEmployeeId = ref(null);
     const selectedStatusId = ref(null);
+    const showCancelled = ref(false); // Показывать ли отменённые бронирования
 
     // Computed
     const filteredBookings = computed(() => {
@@ -80,6 +81,11 @@ export const useCalendarStore = defineStore("calendar", () => {
 
             if (selectedStatusId.value) {
                 params.status_id = selectedStatusId.value;
+            }
+
+            // Добавляем параметр для отображения отменённых бронирований
+            if (showCancelled.value) {
+                params.show_cancelled = true;
             }
 
             const response = await window.axios.get("/api/calendar", {
@@ -291,6 +297,7 @@ export const useCalendarStore = defineStore("calendar", () => {
         selectedWorkplaceId,
         selectedEmployeeId,
         selectedStatusId,
+        showCancelled, // Добавляем новое поле
         filterDictionary,
 
         // Computed

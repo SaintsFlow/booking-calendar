@@ -110,6 +110,24 @@ class Tenant extends Model
     }
 
     /**
+     * Подписки тенанта
+     */
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(Subscription::class);
+    }
+
+    /**
+     * Текущая активная подписка
+     */
+    public function activeSubscription()
+    {
+        return $this->hasOne(Subscription::class)
+            ->where('status', 'active')
+            ->latest();
+    }
+
+    /**
      * Создание базовых статусов для нового тенанта
      */
     public function createDefaultStatuses(): void

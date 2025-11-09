@@ -93,6 +93,16 @@
                                 {{ status.name }}
                             </option>
                         </select>
+
+                        <!-- Переключатель отображения отменённых бронирований -->
+                        <label class="flex items-center gap-2 px-3 py-2 text-xs md:text-sm bg-gray-50 rounded-lg border border-gray-300 cursor-pointer hover:bg-gray-100 whitespace-nowrap">
+                            <input 
+                                type="checkbox" 
+                                v-model="calendarStore.showCancelled"
+                                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span class="text-gray-700">Показать отменённые</span>
+                        </label>
                         
                         <!-- Кнопка сброса фильтров -->
                         <button
@@ -173,6 +183,7 @@ const resetFilters = () => {
     calendarStore.selectedWorkplaceId = null;
     calendarStore.selectedEmployeeId = null;
     calendarStore.selectedStatusId = null;
+    calendarStore.showCancelled = false;
 };
 
 const viewLabels = {
@@ -321,6 +332,7 @@ watch(
         calendarStore.selectedWorkplaceId,
         calendarStore.selectedEmployeeId,
         calendarStore.selectedStatusId,
+        calendarStore.showCancelled,
     ],
     () => {
         calendarStore.fetchCalendar();

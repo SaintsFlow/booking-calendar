@@ -122,4 +122,32 @@ class BookingPolicy
         // Сотрудник может менять статус только своих записей
         return $booking->employee_id === $user->id;
     }
+
+    /**
+     * Может ли пользователь отменить бронирование
+     */
+    public function cancel(User $user, Booking $booking): bool
+    {
+        // Проверка тенанта
+        if ($user->tenant_id !== $booking->tenant_id) {
+            return false;
+        }
+
+        // Только менеджер и выше могут отменять
+        return $user->hasManagerAccess();
+    }
+
+    /**
+     * Может ли пользователь восстановить отменённое бронирование
+     */
+    public function restore(User $user, Booking $booking): bool
+    {
+        // Проверка тенанта
+        if ($user->tenant_id !== $booking->tenant_id) {
+            return false;
+        }
+
+        // Только менеджер и выше могут восстанавливать
+        return $user->hasManagerAccess();
+    }
 }
