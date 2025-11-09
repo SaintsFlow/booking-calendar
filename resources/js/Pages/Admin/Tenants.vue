@@ -158,6 +158,77 @@
                             />
                         </div>
 
+                        <!-- Опция создания первого сотрудника -->
+                        <div v-if="!showEditModal" class="pt-4 border-t border-gray-200">
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                    v-model="newTenant.create_first_employee"
+                                    type="checkbox"
+                                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span class="text-sm font-medium text-gray-700">
+                                    Создать первого сотрудника
+                                </span>
+                            </label>
+                        </div>
+
+                        <!-- Поля первого сотрудника -->
+                        <div v-if="!showEditModal && newTenant.create_first_employee" class="space-y-4 pl-6 border-l-2 border-blue-200">
+                            <h4 class="text-sm font-semibold text-gray-900">Данные сотрудника</h4>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Имя сотрудника *
+                                </label>
+                                <input
+                                    v-model="newTenant.employee_name"
+                                    type="text"
+                                    :required="newTenant.create_first_employee"
+                                    class="w-full border-gray-300 rounded-lg"
+                                    placeholder="Мария Петрова"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Email сотрудника *
+                                </label>
+                                <input
+                                    v-model="newTenant.employee_email"
+                                    type="email"
+                                    :required="newTenant.create_first_employee"
+                                    class="w-full border-gray-300 rounded-lg"
+                                    placeholder="employee@example.com"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Телефон
+                                </label>
+                                <input
+                                    v-model="newTenant.employee_phone"
+                                    type="tel"
+                                    class="w-full border-gray-300 rounded-lg"
+                                    placeholder="+7 (999) 123-45-67"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Пароль сотрудника *
+                                </label>
+                                <input
+                                    v-model="newTenant.employee_password"
+                                    type="password"
+                                    :required="newTenant.create_first_employee"
+                                    minlength="8"
+                                    class="w-full border-gray-300 rounded-lg"
+                                    placeholder="Минимум 8 символов"
+                                />
+                            </div>
+                        </div>
+
                         <div class="flex gap-3 pt-4">
                             <button
                                 type="submit"
@@ -199,6 +270,11 @@ const newTenant = ref({
     admin_name: '',
     admin_email: '',
     admin_password: '',
+    create_first_employee: false,
+    employee_name: '',
+    employee_email: '',
+    employee_phone: '',
+    employee_password: '',
 });
 
 onMounted(async () => {
@@ -263,6 +339,11 @@ const closeModal = () => {
         admin_name: '',
         admin_email: '',
         admin_password: '',
+        create_first_employee: false,
+        employee_name: '',
+        employee_email: '',
+        employee_phone: '',
+        employee_password: '',
     };
 };
 

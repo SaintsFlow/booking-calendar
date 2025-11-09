@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Actions\Booking\CreateBookingAction;
 use App\Actions\Booking\DeleteBookingAction;
 use App\Actions\Booking\UpdateBookingAction;
+use App\Actions\Booking\DetectDuplicateBooking;
 use App\Models\Booking;
 use App\Models\Status;
+use App\Rules\NotAdminUser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -55,7 +57,7 @@ class BookingController extends Controller
 
         $validated = $request->validate([
             'workplace_id' => 'required|exists:workplaces,id',
-            'employee_id' => 'required|exists:users,id',
+            'employee_id' => ['required', 'exists:users,id', new NotAdminUser()],
             'client_id' => 'required|exists:clients,id',
             'start_time' => 'required|date|after:now',
             'service_ids' => 'required|array|min:1',
@@ -72,6 +74,23 @@ class BookingController extends Controller
         $totalDuration = $services->sum('duration_minutes');
         $totalPrice = $services->sum('price');
         $endTime = $startTime->copy()->addMinutes($totalDuration);
+
+        // Проверяем на дубликаты бронирования
+        $duplicateDetector = new DetectDuplicateBooking();
+        $duplicate = $duplicateDetector->detect(
+            $validated['client_id'],
+            $startTime,
+            $endTime,
+            $validated['service_ids']
+        );
+
+        if ($duplicate) {
+            return response()->json([
+                'message' => $duplicateDetector->getErrorMessage($duplicate),
+                'error' => 'DUPLICATE_BOOKING',
+                'duplicate_booking_id' => $duplicate->id,
+            ], 422);
+        }
 
         // Проверяем конфликты времени
         if (Booking::hasTimeConflict($validated['employee_id'], $startTime, $endTime)) {
@@ -150,7 +169,7 @@ class BookingController extends Controller
 
         $validated = $request->validate([
             'workplace_id' => 'sometimes|exists:workplaces,id',
-            'employee_id' => 'sometimes|exists:users,id',
+            'employee_id' => ['sometimes', 'exists:users,id', new NotAdminUser()],
             'client_id' => 'sometimes|exists:clients,id',
             'status_id' => 'sometimes|exists:statuses,id',
             'start_time' => 'sometimes|date',
@@ -171,6 +190,25 @@ class BookingController extends Controller
                 $totalDuration = $services->sum('duration_minutes');
                 $totalPrice = $services->sum('price');
                 $endTime = $startTime->copy()->addMinutes($totalDuration);
+
+                // Проверяем на дубликаты бронирования (исключая текущее)
+                $clientId = $validated['client_id'] ?? $booking->client_id;
+                $duplicateDetector = new DetectDuplicateBooking();
+                $duplicate = $duplicateDetector->detect(
+                    $clientId,
+                    $startTime,
+                    $endTime,
+                    $validated['service_ids'],
+                    $booking->id // Исключаем текущее бронирование
+                );
+
+                if ($duplicate) {
+                    return response()->json([
+                        'message' => $duplicateDetector->getErrorMessage($duplicate),
+                        'error' => 'DUPLICATE_BOOKING',
+                        'duplicate_booking_id' => $duplicate->id,
+                    ], 422);
+                }
 
                 // Проверяем конфликты (исключая текущее бронирование)
                 $employeeId = $validated['employee_id'] ?? $booking->employee_id;
@@ -241,7 +279,7 @@ class BookingController extends Controller
 
         $validated = $request->validate([
             'start_time' => 'required|date',
-            'employee_id' => 'sometimes|exists:users,id',
+            'employee_id' => ['sometimes', 'exists:users,id', new NotAdminUser()],
             'workplace_id' => 'sometimes|exists:workplaces,id',
         ]);
 
@@ -352,5 +390,80 @@ class BookingController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Отменить бронирование (изменить статус на "отменено")
+     */
+    public function cancel(Request $request, Booking $booking)
+    {
+        $this->authorize('cancel', $booking);
+
+        $validated = $request->validate([
+            'cancel_reason' => 'nullable|string|max:500',
+            'cancelled_by_admin' => 'boolean',
+        ]);
+
+        // Определяем код статуса отмены
+        $statusCode = $validated['cancelled_by_admin'] ?? false
+            ? 'cancelled_by_admin'
+            : 'cancelled_by_client';
+
+        // Находим статус отмены
+        $cancelStatus = Status::forTenant($booking->tenant_id)
+            ->where('code', $statusCode)
+            ->first();
+
+        if (!$cancelStatus) {
+            return response()->json([
+                'message' => 'Статус отмены не найден',
+            ], 404);
+        }
+
+        $booking->update([
+            'status_id' => $cancelStatus->id,
+            'comment' => $booking->comment
+                ? $booking->comment . "\n\nПричина отмены: " . ($validated['cancel_reason'] ?? 'Не указана')
+                : 'Причина отмены: ' . ($validated['cancel_reason'] ?? 'Не указана'),
+        ]);
+
+        return response()->json([
+            'message' => 'Бронирование отменено',
+            'booking' => $booking->load('status'),
+        ]);
+    }
+
+    /**
+     * Восстановить отменённое бронирование
+     */
+    public function restore(Booking $booking)
+    {
+        $this->authorize('restore', $booking);
+
+        if (!$booking->canBeRestored()) {
+            return response()->json([
+                'message' => 'Бронирование не может быть восстановлено (уже прошло или не отменено)',
+            ], 422);
+        }
+
+        // Восстанавливаем статус "Подтверждено"
+        $confirmedStatus = Status::forTenant($booking->tenant_id)
+            ->where('code', 'confirmed')
+            ->first();
+
+        if (!$confirmedStatus) {
+            return response()->json([
+                'message' => 'Статус подтверждения не найден',
+            ], 404);
+        }
+
+        $booking->update([
+            'status_id' => $confirmedStatus->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Бронирование восстановлено',
+            'booking' => $booking->load('status'),
+        ]);
     }
 }

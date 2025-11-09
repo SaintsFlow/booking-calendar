@@ -8,7 +8,7 @@
                         <!-- Logo -->
                         <div class="shrink-0 flex items-center">
                             <Link :href="route('home')" class="text-base sm:text-xl font-bold text-blue-600">
-                                {{ $page.props.auth.tenant.name }}
+                                {{ $page.props.auth.tenant?.name || $page.props.appName || 'Календарь' }}
                             </Link>
                         </div>
 

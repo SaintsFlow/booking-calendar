@@ -22,9 +22,28 @@ class CalendarController extends Controller
             'workplace_id' => 'nullable|exists:workplaces,id',
             'employee_id' => 'nullable|exists:users,id',
             'status_id' => 'nullable|exists:statuses,id',
+            'show_cancelled' => 'nullable|boolean',
         ]);
 
         $tenantId = $request->user()->tenant_id;
+
+        // Супер-админы не имеют доступа к календарю (нет tenant)
+        if (!$tenantId) {
+            return response()->json([
+                'view' => $validated['view'],
+                'start_date' => now()->toISOString(),
+                'end_date' => now()->toISOString(),
+                'calendar' => [],
+                'workplaces' => [],
+                'employees' => [],
+                'filter_dictionary' => [
+                    'workplaces' => [],
+                    'employees' => [],
+                    'statuses' => [],
+                ],
+            ]);
+        }
+
         $view = $validated['view'];
         $date = Carbon::parse($validated['date']);
 
@@ -55,6 +74,13 @@ class CalendarController extends Controller
 
         if ($validated['status_id'] ?? null) {
             $bookingsQuery->forStatus($validated['status_id']);
+        }
+
+        // Фильтр отменённых бронирований
+        // Сотрудники НИКОГДА не видят отменённые, даже если параметр передан
+        $showCancelled = ($validated['show_cancelled'] ?? false) && !$request->user()->isEmployee();
+        if (!$showCancelled) {
+            $bookingsQuery->excludeCancelled();
         }
 
         // Для сотрудников показываем только их записи

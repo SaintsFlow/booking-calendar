@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\CRM\SyncProductsFromBitrix24Job;
+use App\Jobs\CRM\SyncUsersFromBitrix24Job;
+use App\Jobs\CRM\SyncProductToBitrix24Job;
+use App\Models\Service;
 use App\Models\TenantBitrix24Settings;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -175,6 +178,56 @@ class Bitrix24SettingsController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Синхронизация товаров запущена. Это может занять некоторое время.',
+        ]);
+    }
+
+    /**
+     * Синхронизировать пользователей из Битрикс24 вручную
+     */
+    public function syncUsers()
+    {
+        $this->authorize('update', TenantBitrix24Settings::class);
+
+        $tenant = auth()->user()->tenant;
+
+        // Запускаем Job для синхронизации
+        SyncUsersFromBitrix24Job::dispatch($tenant);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Синхронизация пользователей запущена. Это может занять некоторое время.',
+        ]);
+    }
+
+    /**
+     * Синхронизировать локальные услуги В Битрикс24 вручную
+     */
+    public function syncServicesToBitrix24()
+    {
+        $this->authorize('update', TenantBitrix24Settings::class);
+
+        $tenant = auth()->user()->tenant;
+
+        // Получаем все активные услуги тенанта
+        $services = Service::where('tenant_id', $tenant->id)
+            ->where('is_active', true)
+            ->get();
+
+        if ($services->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Нет активных услуг для синхронизации.',
+            ], 400);
+        }
+
+        // Запускаем Job для каждой услуги
+        foreach ($services as $service) {
+            SyncProductToBitrix24Job::dispatch($service);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Синхронизация {$services->count()} услуг в Bitrix24 запущена. Это может занять некоторое время.",
         ]);
     }
 }
